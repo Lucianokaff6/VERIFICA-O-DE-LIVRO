@@ -1,0 +1,61 @@
+import requests
+from flask import Flask, jsonify
+from urllib.parse import quote
+
+app = Flask(__name__)
+
+def buscar_openlibrary(titulo):
+    url = f"https://openlibrary.org/search.json?title={quote(titulo)}"
+    resposta = requests.get(url)
+    return resposta.json()
+
+@app.route('/externo/livros/<string:titulo>', methods=['GET'])
+def buscar_livro_externo(titulo):
+
+    dados = buscar_openlibrary(titulo)
+
+    livros = []
+
+    for item in dados.get('docs', [])[:5]:
+        livros.append({
+            "titulo": item.get("title", "Sem título"),
+            "autor": item.get("author_name", ["Autor desconhecido"])[0],
+            "valor_estimado": f"R$ {round(10 + item.get('edition_count', 1) * 2.5, 2)}"
+        })
+
+    # 🔎 Se encontrou resultado direto
+    if livros:
+        return jsonify({
+            "mensagem": "Resultado encontrado",
+            "livros": livros
+        })
+
+    # 🔥 Se NÃO encontrou, tenta busca por palavras separadas (similaridade)
+    palavras = titulo.split()
+    similares = []
+
+    for palavra in palavras:
+        dados_similares = buscar_openlibrary(palavra)
+
+        for item in dados_similares.get('docs', [])[:3]:
+            similares.append({
+                "titulo": item.get("title", "Sem título"),
+                "autor": item.get("author_name", ["Autor desconhecido"])[0],
+                "valor_estimado": f"R$ {round(10 + item.get('edition_count', 1) * 2.5, 2)}"
+            })
+
+    # remove duplicados simples
+    vistos = set()
+    similares_unicos = []
+    for l in similares:
+        if l["titulo"] not in vistos:
+            vistos.add(l["titulo"])
+            similares_unicos.append(l)
+
+    return jsonify({
+        "mensagem": "Não foi encontrado esse resultado, mas encontramos similares",
+        "livros": similares_unicos[:5]
+    })
+
+if __name__ == '__main__':
+    app.run(host='localhost', port=5000, debug=True)
